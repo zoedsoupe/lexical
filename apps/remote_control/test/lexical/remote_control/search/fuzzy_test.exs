@@ -43,10 +43,14 @@ defmodule Lexical.RemoteControl.Search.FuzzyTest do
     end
 
     test "a value can be removed", %{fuzzy: fuzzy, entries: [to_remove | _]} do
+      string_subject = inspect(to_remove.subject)
       assert Fuzzy.has_subject?(fuzzy, to_remove.subject)
+      assert Map.has_key?(fuzzy.preprocessed_subjects, string_subject)
+
       fuzzy = Fuzzy.drop_values(fuzzy, [to_remove.ref])
 
       refute Fuzzy.has_subject?(fuzzy, to_remove.subject)
+      refute Map.has_key?(fuzzy.preprocessed_subjects, string_subject)
     end
 
     test "removing a non-existent value is a no-op", %{fuzzy: fuzzy} do

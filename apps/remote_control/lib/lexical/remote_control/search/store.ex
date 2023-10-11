@@ -28,6 +28,11 @@ defmodule Lexical.RemoteControl.Search.Store do
              {:ok, new_entries, paths_to_delete} | {:error, term()})
 
   @backend Application.compile_env(:remote_control, :search_store_backend, Store.Backends.Ets)
+  @update_flush_interval Application.compile_env(
+                           :remote_control,
+                           :search_store_update_flush_interval,
+                           125
+                         )
 
   use GenServer
   require Logger
@@ -101,6 +106,8 @@ defmodule Lexical.RemoteControl.Search.Store do
   end
 
   def init([%Project{} = project, create_index, update_index, backend]) do
+    schedule_update_flush()
+
     state =
       project
       |> State.new(create_index, update_index, backend)
@@ -112,6 +119,12 @@ defmodule Lexical.RemoteControl.Search.Store do
   # handle the result from `State.async_load/1`
   def handle_info({ref, result}, %State{async_load_ref: ref} = state) do
     {:noreply, State.async_load_complete(state, result)}
+  end
+
+  def handle_info(:flush_updates, %State{} = state) do
+    {:ok, new_state} = State.apply_updates(state)
+    schedule_update_flush()
+    {:noreply, new_state}
   end
 
   def handle_info(_, state) do
@@ -144,8 +157,8 @@ defmodule Lexical.RemoteControl.Search.Store do
   end
 
   def handle_call({:update, path, entries}, _from, %State{} = state) do
-    {reply, new_state} = do_update(state, path, entries)
-    {:reply, reply, new_state}
+    new_state = State.buffer_update(state, path, entries)
+    {:reply, :ok, new_state}
   end
 
   def handle_call(:drop, _, %State{} = state) do
@@ -163,7 +176,7 @@ defmodule Lexical.RemoteControl.Search.Store do
   end
 
   def handle_cast({:update, path, entries}, %State{} = state) do
-    {_reply, new_state} = do_update(state, path, entries)
+    new_state = State.buffer_update(state, path, entries)
     {:noreply, new_state}
   end
 
@@ -171,13 +184,11 @@ defmodule Lexical.RemoteControl.Search.Store do
     @backend
   end
 
-  defp do_update(state, path, entries) do
-    case State.update(state, path, entries) do
-      {:ok, new_state} ->
-        {:ok, new_state}
-
-      {:error, _} = error ->
-        {error, state}
+  defp schedule_update_flush do
+    if :rand.uniform(100) <= 10 do
+      :erlang.garbage_collect()
     end
+
+    Process.send_after(self(), :flush_updates, @update_flush_interval)
   end
 end

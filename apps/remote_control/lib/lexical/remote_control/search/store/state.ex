@@ -11,7 +11,8 @@ defmodule Lexical.RemoteControl.Search.Store.State do
     :update_index,
     :loaded?,
     :fuzzy,
-    :async_load_ref
+    :async_load_ref,
+    :update_buffer
   ]
 
   def new(%Project{} = project, create_index, update_index, backend) do
@@ -20,7 +21,8 @@ defmodule Lexical.RemoteControl.Search.Store.State do
       create_index: create_index,
       project: project,
       loaded?: false,
-      update_index: update_index
+      update_index: update_index,
+      update_buffer: %{}
     }
   end
 
@@ -92,11 +94,30 @@ defmodule Lexical.RemoteControl.Search.Store.State do
     state.backend.select_all()
   end
 
-  def update(%__MODULE__{} = state, path, entries) do
-    with {:ok, state} <- update_nosync(state, path, entries),
+  def buffer_update(%__MODULE__{} = state, path, entries) do
+    %__MODULE__{state | update_buffer: Map.put(state.update_buffer, path, entries)}
+  end
+
+  def apply_updates(%__MODULE__{update_buffer: buffer} = old_state) when map_size(buffer) > 0 do
+    results =
+      Enum.reduce_while(buffer, old_state, fn {path, entries}, state ->
+        case update_nosync(state, path, entries) do
+          {:ok, state} -> {:cont, state}
+          error -> {:halt, {error, old_state}}
+        end
+      end)
+
+    with %__MODULE__{} = state <- results,
          :ok <- maybe_sync(state) do
-      {:ok, state}
+      {:ok, %__MODULE__{state | update_buffer: %{}}}
+    else
+      error ->
+        error
     end
+  end
+
+  def flush_updates(%__MODULE__{} = state) do
+    {:ok, state}
   end
 
   def update_nosync(%__MODULE__{} = state, path, entries) do
