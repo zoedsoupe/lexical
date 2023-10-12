@@ -116,7 +116,7 @@ defmodule Lexical.RemoteControl.Search.Store.State do
     end
   end
 
-  def flush_updates(%__MODULE__{} = state) do
+  def apply_updates(%__MODULE__{} = state) do
     {:ok, state}
   end
 
