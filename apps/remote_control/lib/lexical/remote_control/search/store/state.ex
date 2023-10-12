@@ -22,8 +22,7 @@ defmodule Lexical.RemoteControl.Search.Store.State do
       project: project,
       loaded?: false,
       update_index: update_index,
-      update_buffer: %{},
-      fuzzy: Fuzzy.from_entries([])
+      update_buffer: %{}
     }
   end
 
@@ -100,7 +99,8 @@ defmodule Lexical.RemoteControl.Search.Store.State do
     %__MODULE__{state | update_buffer: Map.put(state.update_buffer, path, entries)}
   end
 
-  def apply_updates(%__MODULE__{update_buffer: buffer} = old_state) when map_size(buffer) > 0 do
+  def apply_updates(%__MODULE__{loaded?: true, update_buffer: buffer} = old_state)
+      when map_size(buffer) > 0 do
     results =
       Enum.reduce_while(buffer, old_state, fn {path, entries}, state ->
         case update_nosync(state, path, entries) do
