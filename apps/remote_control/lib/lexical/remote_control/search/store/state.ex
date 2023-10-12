@@ -22,7 +22,8 @@ defmodule Lexical.RemoteControl.Search.Store.State do
       project: project,
       loaded?: false,
       update_index: update_index,
-      update_buffer: %{}
+      update_buffer: %{},
+      fuzzy: Fuzzy.from_entries([])
     }
   end
 
@@ -75,6 +76,7 @@ defmodule Lexical.RemoteControl.Search.Store.State do
     type = Keyword.get(constraints, :type, :_)
     subtype = Keyword.get(constraints, :subtype, :_)
     results = state.backend.find_by_subject(subject, type, subtype)
+
     {:ok, results}
   end
 
