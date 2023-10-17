@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 detect_version_manager() {
-    if command -v asdf > /dev/null && asdf which elixir > /dev/null 2>&1 ; then
+    if command -v asdf >/dev/null && asdf which elixir >/dev/null 2>&1; then
         echo "asdf"
-    elif command -v rtx > /dev/null &&  rtx which elixir > /dev/null 2>&1 ; then
+    elif command -v rtx >/dev/null && rtx which elixir >/dev/null 2>&1; then
         echo "rtx"
     else
         echo "not_detected"
@@ -18,8 +18,7 @@ case "$(detect_version_manager)" in
     rtx)
         eval "$(rtx env -s bash)"
         ;;
-    *)
-        ;;
+    *) ;;
 esac
 
 case $1 in
@@ -31,7 +30,7 @@ case $1 in
         ;;
 esac
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 "${ELIXIR_COMMAND}" \
     --cookie "lexical" \
