@@ -8,7 +8,6 @@ defmodule Lexical.RemoteControl.Search.Store.Backends.Ets.State do
   alias Lexical.Project
   alias Lexical.RemoteControl.Search.Store.Backends.Ets.Schema
   alias Lexical.RemoteControl.Search.Store.Backends.Ets.Schemas
-  alias Lexical.VM.Versions
 
   @schema_order [
     Schemas.LegacyV0,
@@ -60,15 +59,11 @@ defmodule Lexical.RemoteControl.Search.Store.Backends.Ets.State do
   end
 
   def find_by_subject(%__MODULE__{} = state, subject, type, subtype) do
-    versions = Versions.current()
-
     match_pattern =
       query_by_subject(
         subject: to_subject(subject),
         type: type,
-        subtype: subtype,
-        elixir_version: versions.elixir,
-        erlang_version: versions.erlang
+        subtype: subtype
       )
 
     state.table_name
@@ -78,10 +73,8 @@ defmodule Lexical.RemoteControl.Search.Store.Backends.Ets.State do
 
   def find_by_references(%__MODULE__{} = state, references, type, subtype)
       when is_list(references) do
-    versions = Versions.current()
-
     for reference <- references,
-        match_pattern = match_id_key(reference, versions, type, subtype),
+        match_pattern = match_id_key(reference, type, subtype),
         {_key, entry} <- :ets.match_object(state.table_name, match_pattern) do
       entry
     end
@@ -133,14 +126,8 @@ defmodule Lexical.RemoteControl.Search.Store.Backends.Ets.State do
     state
   end
 
-  defp match_id_key(reference, versions, type, subtype) do
-    {query_by_id(
-       id: reference,
-       type: type,
-       subtype: subtype,
-       elixir_version: versions.elixir,
-       erlang_version: versions.erlang
-     ), :_}
+  defp match_id_key(reference, type, subtype) do
+    {query_by_id(id: reference, type: type, subtype: subtype), :_}
   end
 
   defp to_subject(binary) when is_binary(binary), do: binary
