@@ -32,6 +32,29 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     {:ok, entries, elem}
   end
 
+  def extract({:def, _, definition}, %Reducer{} = reducer) do
+    [function_header, _block] = definition
+    {_function_name, _meta, params} = function_header
+
+    %Block{} = block = Reducer.current_block(reducer)
+    subjet_with_ranges = params |> List.wrap() |> extract_from_left(reducer) |> List.flatten()
+
+    entries =
+      for {subject, range} <- subjet_with_ranges do
+        Entry.definition(
+          reducer.document.path,
+          block.ref,
+          block.parent_ref,
+          subject,
+          :variable,
+          range,
+          get_application(reducer.document)
+        )
+      end
+
+    {:ok, entries, definition}
+  end
+
   def extract(
         _elem,
         %Reducer{} = _reducer
@@ -48,6 +71,11 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     Enum.map(ast_list, fn ast -> extract_from_left(ast, reducer) end)
   end
 
+  # def foo(a, `b \\ 2`)
+  defp extract_from_left({:\\, _meta, [parameter, _default_value]}, reducer) do
+    extract_from_left(parameter, reducer)
+  end
+
   # `%{a: a, b: b}` = %{a: 1, b: 2}
   defp extract_from_left({:%{}, _map_metadata, fields}, reducer) do
     Enum.map(fields, fn {_key, value} -> extract_from_left(value, reducer) end)
@@ -55,6 +83,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
 
   # `%Foo{a: a, b: b}` = %Foo{a: 1, b: 2}
   defp extract_from_left({:%, _map_metadata, [_struct_module_info, struct_block]}, reducer) do
+    # struct_block is the same as `%{a: a, b: b}`
     extract_from_left(struct_block, reducer)
   end
 

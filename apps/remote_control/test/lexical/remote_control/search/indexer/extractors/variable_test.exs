@@ -31,20 +31,6 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert decorate(doc, variable.range) =~ "«a» = 1"
     end
 
-    test "inside a function definition" do
-      {:ok, [variable], doc} = ~q[
-        def foo do
-          a = 1
-        end
-      ] |> index()
-
-      # NOTE: it should be the function definition ref once we implement that
-      assert variable.parent == :root
-
-      assert variable.subject == :a
-      assert decorate(doc, variable.range) =~ "«a» = 1"
-    end
-
     test "multiple assignments with `Tuple` in one line" do
       {:ok, [a, b], doc} = ~q[
         {a, b} = {1, 2}
@@ -133,5 +119,62 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
     end
 
     test "assignment with current module's `struct`"
+  end
+
+  describe "indexing assignments in the function" do
+    test "no assignments in the parameter list" do
+      assert {:ok, [], _doc} = ~q[
+        def foo do
+        end
+      ] |> index()
+    end
+
+    test "simple assignment in the block" do
+      {:ok, [variable], doc} = ~q[
+        def foo do
+          a = 1
+        end
+      ] |> index()
+
+      assert variable.type == :variable
+      assert variable.subject == :a
+      assert decorate(doc, variable.range) =~ "«a» = 1"
+    end
+
+    test "in parameter list" do
+      {:ok, [a, b], doc} = ~q[
+        def foo(a, b) do
+        end
+      ] |> index()
+
+      assert a.subject == :a
+      assert decorate(doc, a.range) =~ "def foo(«a», b)"
+
+      assert b.subject == :b
+      assert decorate(doc, b.range) =~ "def foo(a, «b»)"
+    end
+
+    test "in parameter list with default value" do
+      {:ok, [a, b], doc} = ~q[
+        def foo(a, b \\ 2) do
+        end
+      ] |> index()
+
+      assert a.subject == :a
+      assert decorate(doc, a.range) =~ "def foo(«a», b \\\\ 2)"
+
+      assert b.subject == :b
+      assert decorate(doc, b.range) =~ "def foo(a, «b» \\\\ 2)"
+    end
+
+    test "in parameter list but on the right side" do
+      {:ok, [a], doc} = ~q[
+        def foo(:a = a, 1 = b) do
+        end
+      ] |> index()
+
+      assert a.subject == :a
+      assert decorate(doc, a.range) =~ "def foo(1 = «a»)"
+    end
   end
 end
