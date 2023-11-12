@@ -15,7 +15,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Source.Reducer do
 
   defstruct [:analysis, :entries, :document, :position, :ends_at, :blocks]
 
-  @extractors [Extractors.Module]
+  @extractors [Extractors.Module, Extractors.Variable]
 
   def new(%Document{} = document, %Analysis{} = analysis) do
     %__MODULE__{
@@ -73,6 +73,10 @@ defmodule Lexical.RemoteControl.Search.Indexer.Source.Reducer do
         {:ok, entry} ->
           reducer = push_entry(reducer, entry)
           {reducer, element}
+
+        {:ok, entries, elem} when is_list(entries) ->
+          reducer = push_entries(reducer, entries)
+          {reducer, elem}
 
         {:ok, entry, elem} ->
           reducer = push_entry(reducer, entry)
@@ -135,6 +139,15 @@ defmodule Lexical.RemoteControl.Search.Indexer.Source.Reducer do
 
   defp push_entry(%__MODULE__{} = reducer, %Entry{} = entry) do
     %__MODULE__{reducer | entries: [entry | reducer.entries]}
+  end
+
+  defp push_entries(%__MODULE__{} = reducer, entries) do
+    entries =
+      Enum.reduce(entries, reducer.entries, fn entry, entries ->
+        [entry | entries]
+      end)
+
+    %__MODULE__{reducer | entries: entries}
   end
 
   defp maybe_pop_block(%__MODULE__{} = reducer) do
