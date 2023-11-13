@@ -8,6 +8,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
   alias Lexical.RemoteControl.Search.Indexer.Metadata
   alias Lexical.RemoteControl.Search.Indexer.Source.Block
   alias Lexical.RemoteControl.Search.Indexer.Source.Reducer
+  require Logger
 
   def extract(
         {:=, _assignment_meta, [left, _right]} = elem,
@@ -31,6 +32,42 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     {:ok, entries, elem}
   end
 
+  def extract({atom, meta, nil}, %Reducer{} = reducer) when is_atom(atom) do
+    definition =
+      Enum.find(reducer.entries, fn entry ->
+        entry.type == :variable and
+          entry.subtype == :definition and
+          entry.subject == atom
+      end)
+
+    position = {line, column} = Metadata.position(meta)
+
+    case definition do
+      nil ->
+        Logger.error(
+          "Variable definition not found for #{atom} at #{inspect(Metadata.position(meta))}"
+        )
+
+        :ignored
+
+      %Entry{range: %Range{start: %Position{line: definition_line, character: definition_char}}}
+      when definition_line == line and definition_char == column ->
+        :ignored
+
+      definition ->
+        {:ok,
+         Entry.reference(
+           reducer.document.path,
+           make_ref(),
+           definition.ref,
+           atom,
+           :variable,
+           to_range(reducer.document, atom, position),
+           get_application(reducer.document)
+         )}
+    end
+  end
+
   def extract(
         _elem,
         %Reducer{} = _reducer
@@ -44,8 +81,8 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     for {subject, range} <- List.flatten(subject_with_ranges) do
       Entry.definition(
         reducer.document.path,
+        make_ref(),
         block.ref,
-        block.parent_ref,
         subject,
         :variable,
         range,

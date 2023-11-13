@@ -193,4 +193,28 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert decorate(doc, value.range) =~ "def func(%Foo{field: «value»}=foo)"
     end
   end
+
+  describe "variable usage" do
+    test "simple usage" do
+      {:ok, [definition, usage], doc} = ~q/
+        a = 1
+        [a]
+      / |> index()
+
+      assert definition.subject == :a
+      assert decorate(doc, definition.range) =~ "«a» = 1"
+      assert definition.subtype == :definition
+
+      assert usage.subject == :a
+      assert decorate(doc, usage.range) =~ "[«a»]"
+      assert usage.subtype == :reference
+      assert usage.parent == definition.ref
+    end
+
+    test "uses after `when`"
+
+    test "uses in case"
+
+    test "uses in cond"
+  end
 end
