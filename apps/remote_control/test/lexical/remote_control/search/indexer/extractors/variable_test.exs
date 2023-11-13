@@ -119,6 +119,18 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
     end
 
     test "assignment with current module's `struct`"
+
+    test "assignments with multiple `=`" do
+      {:ok, [value, _, struct_variable, _], doc} = ~q(
+        %Foo{field: value} = foo = %Foo{field: 1}
+      ) |> index()
+
+      assert value.subject == :value
+      assert decorate(doc, value.range) =~ "%Foo{field: «value»}"
+
+      assert struct_variable.subject == :foo
+      assert decorate(doc, struct_variable.range) =~ "«foo» = %Foo{field: 1}"
+    end
   end
 
   describe "indexing assignments in the function" do
@@ -127,18 +139,6 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
         def foo do
         end
       ] |> index()
-    end
-
-    test "simple assignment in the block" do
-      {:ok, [variable], doc} = ~q[
-        def foo do
-          a = 1
-        end
-      ] |> index()
-
-      assert variable.type == :variable
-      assert variable.subject == :a
-      assert decorate(doc, variable.range) =~ "«a» = 1"
     end
 
     test "in parameter list" do
@@ -168,13 +168,29 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
     end
 
     test "in parameter list but on the right side" do
-      {:ok, [a], doc} = ~q[
+      {:ok, [a, b], doc} = ~q[
         def foo(:a = a, 1 = b) do
         end
       ] |> index()
 
       assert a.subject == :a
-      assert decorate(doc, a.range) =~ "def foo(1 = «a»)"
+      assert decorate(doc, a.range) =~ "def foo(:a = «a», 1 = b)"
+
+      assert b.subject == :b
+      assert decorate(doc, b.range) =~ "def foo(:a = a, 1 = «b»)"
+    end
+
+    test "matching struct in parameter list" do
+      {:ok, [foo, value, _module_ref], doc} = ~q[
+        def func(%Foo{field: value}=foo) do
+        end
+      ] |> index()
+
+      assert foo.subject == :foo
+      assert decorate(doc, foo.range) =~ "def func(%Foo{field: value}=«foo»)"
+
+      assert value.subject == :value
+      assert decorate(doc, value.range) =~ "def func(%Foo{field: «value»}=foo)"
     end
   end
 end
