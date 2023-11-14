@@ -15,7 +15,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
         %Reducer{} = reducer
       ) do
     subject_with_ranges = left |> extract_from_left(reducer) |> List.wrap() |> List.flatten()
-    entries = to_entries(subject_with_ranges, reducer)
+    entries = to_definition_entries(subject_with_ranges, reducer)
     {:ok, entries, elem}
   end
 
@@ -28,30 +28,21 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
       extract_from_left(params, reducer) ++ extract_from_right(params, reducer)
     ]
 
-    entries = to_entries(subject_with_ranges, reducer)
+    entries = to_definition_entries(subject_with_ranges, reducer)
     {:ok, entries, elem}
   end
 
-  def extract({atom, meta, nil}, %Reducer{} = reducer) when is_atom(atom) do
-    definition =
-      Enum.find(reducer.entries, fn entry ->
-        entry.type == :variable and
-          entry.subtype == :definition and
-          entry.subject == atom
-      end)
-
+  def extract({variable_atom, meta, nil}, %Reducer{} = reducer) when is_atom(variable_atom) do
     position = {line, column} = Metadata.position(meta)
 
-    case definition do
+    case find_definition(reducer, variable_atom) do
       nil ->
-        Logger.error(
-          "Variable definition not found for #{atom} at #{inspect(Metadata.position(meta))}"
-        )
-
+        Logger.error("Variable definition not found for #{variable_atom} at #{inspect(position)}")
         :ignored
 
       %Entry{range: %Range{start: %Position{line: definition_line, character: definition_char}}}
       when definition_line == line and definition_char == column ->
+        # That means current position is the `definition`
         :ignored
 
       definition ->
@@ -60,9 +51,9 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
            reducer.document.path,
            make_ref(),
            definition.ref,
-           atom,
+           variable_atom,
            :variable,
-           to_range(reducer.document, atom, position),
+           to_range(reducer.document, variable_atom, position),
            get_application(reducer.document)
          )}
     end
@@ -75,7 +66,40 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     :ignored
   end
 
-  defp to_entries(subject_with_ranges, reducer) do
+  defp find_definition(reducer, variable_atom) do
+    block_parent_links =
+      Map.new(reducer.blocks, fn block -> {block.ref, block.parent_ref} end)
+
+    current_block = Reducer.current_block(reducer)
+
+    current_block_ancestors =
+      current_block.ref
+      |> block_ancestors(block_parent_links, [current_block.ref])
+      |> MapSet.new()
+
+    Enum.find(reducer.entries, fn entry ->
+      entry.type == :variable and
+        entry.subtype == :definition and
+        entry.subject == variable_atom and MapSet.member?(current_block_ancestors, entry.parent)
+    end)
+  end
+
+  defp block_ancestors(block_ref, block_parent_links, acc) do
+    root_ref = Block.root().ref
+
+    case Map.get(block_parent_links, block_ref) do
+      nil ->
+        acc
+
+      ^root_ref ->
+        [root_ref | acc]
+
+      parent_ref ->
+        block_ancestors(parent_ref, block_parent_links, [parent_ref | acc])
+    end
+  end
+
+  defp to_definition_entries(subject_with_ranges, reducer) do
     %Block{} = block = Reducer.current_block(reducer)
 
     for {subject, range} <- List.flatten(subject_with_ranges) do

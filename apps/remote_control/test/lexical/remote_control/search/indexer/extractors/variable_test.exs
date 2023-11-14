@@ -216,5 +216,27 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
     test "uses in case"
 
     test "uses in cond"
+
+    test "it doesn't confuse same name variables in diffrent blocks" do
+      assert {:ok, [def1_in_root, def2_in_root, def_in_if, usage_in_if, usage_in_root], doc} = ~q/
+        a = 1
+        a = 2
+        if true do
+          a = 3
+          {a, 1}
+        end
+        [a]
+      / |> index()
+
+      assert decorate(doc, def1_in_root.range) =~ "«a» = 1"
+      assert decorate(doc, def2_in_root.range) =~ "«a» = 2"
+      assert decorate(doc, def_in_if.range) =~ "«a» = 3"
+
+      assert decorate(doc, usage_in_if.range) =~ "«a», 1"
+      assert usage_in_if.parent == def_in_if.ref
+
+      assert decorate(doc, usage_in_root.range) =~ "[«a»]"
+      assert usage_in_root.parent == def2_in_root.ref
+    end
   end
 end

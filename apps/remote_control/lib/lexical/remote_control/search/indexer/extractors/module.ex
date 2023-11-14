@@ -19,7 +19,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Module do
          [{:__aliases__, module_name_meta, module_name}, module_block]},
         %Reducer{} = reducer
       ) do
-    %Block{} = block = Reducer.current_block(reducer)
+    %Block{} = block = Reducer.latest_block(reducer)
     aliased_module = resolve_alias(reducer, module_name)
     module_position = Metadata.position(module_name_meta)
     range = to_range(reducer.document, module_name, module_position)
@@ -50,13 +50,13 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Module do
       {:ok, module} ->
         start = Metadata.position(metadata)
         range = to_range(reducer.document, maybe_module, start)
-        %Block{} = current_block = Reducer.current_block(reducer)
+        %Block{} = latest_block = Reducer.latest_block(reducer)
 
         entry =
           Entry.reference(
             reducer.document.path,
             make_ref(),
-            current_block.ref,
+            latest_block.ref,
             module,
             :module,
             range,
@@ -76,14 +76,14 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Module do
     case module(reducer, atom_literal) do
       {:ok, module} ->
         start = Metadata.position(metadata)
-        %Block{} = current_block = Reducer.current_block(reducer)
+        %Block{} = latest_block = Reducer.latest_block(reducer)
         range = to_range(reducer.document, module, start)
 
         entry =
           Entry.reference(
             reducer.document.path,
             make_ref(),
-            current_block.ref,
+            latest_block.ref,
             module,
             :module,
             range,
