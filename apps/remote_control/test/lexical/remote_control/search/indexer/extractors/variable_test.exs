@@ -180,6 +180,18 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert decorate(doc, b.range) =~ "def foo(:a = a, 1 = «b»)"
     end
 
+    test "multiple assignments with nested structure" do
+      assert {:ok, [var_d, var_a, var_b, var_c], doc} = ~q/
+        def myfunc({:a, a, [b, c]} = d) do
+        end
+      / |> index()
+
+      assert decorate(doc, var_d.range) =~ "def myfunc({:a, a, [b, c]} = «d»)"
+      assert decorate(doc, var_a.range) =~ "def myfunc({:a, «a», [b, c]} = d)"
+      assert decorate(doc, var_b.range) =~ "def myfunc({:a, a, [«b», c]} = d)"
+      assert decorate(doc, var_c.range) =~ "def myfunc({:a, a, [b, «c»]} = d)"
+    end
+
     test "matching struct in parameter list" do
       {:ok, [foo, value, _module_ref], doc} = ~q[
         def func(%Foo{field: value}=foo) do

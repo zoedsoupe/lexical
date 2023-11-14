@@ -19,25 +19,50 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     {:ok, entries, elem}
   end
 
-  def extract({:def, _, definition} = elem, %Reducer{} = reducer) do
-    [function_header, _block] = definition
+  def extract({:def, _, [function_header, _block]} = elem, %Reducer{} = reducer) do
     {_function_name, _meta, params} = function_header
     params = List.wrap(params)
 
     subject_with_ranges = [
-      extract_from_left(params, reducer) ++ extract_from_right(params, reducer)
+      extract_from_left(params, reducer) ++ extract_right_side(params, reducer)
     ]
 
     entries = to_definition_entries(subject_with_ranges, reducer)
     {:ok, entries, elem}
   end
 
-  def extract({variable_atom, meta, nil}, %Reducer{} = reducer) when is_atom(variable_atom) do
+  # `def foo(a, b)` without a block
+  def extract({:def, _, [_]} = _elem, _) do
+    :ignored
+  end
+
+  def extract({variable_atom, meta, nil}, %Reducer{} = reducer)
+      when is_atom(variable_atom) and variable_atom != :_ do
+    variable = to_string(variable_atom)
+
+    if String.starts_with?(variable, "_") do
+      :ignored
+    else
+      extract_usage(variable_atom, meta, reducer)
+    end
+  end
+
+  def extract(
+        _elem,
+        %Reducer{} = _reducer
+      ) do
+    :ignored
+  end
+
+  defp extract_usage(variable_atom, meta, reducer) do
     position = {line, column} = Metadata.position(meta)
 
     case find_definition(reducer, variable_atom) do
       nil ->
-        Logger.error("Variable definition not found for #{variable_atom} at #{inspect(position)}")
+        Logger.warning(
+          "Variable definition not found for #{inspect(variable_atom)} at #{reducer.document.path}:#{line}:#{column}"
+        )
+
         :ignored
 
       %Entry{range: %Range{start: %Position{line: definition_line, character: definition_char}}}
@@ -59,16 +84,8 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     end
   end
 
-  def extract(
-        _elem,
-        %Reducer{} = _reducer
-      ) do
-    :ignored
-  end
-
   defp find_definition(reducer, variable_atom) do
-    block_parent_links =
-      Map.new(reducer.blocks, fn block -> {block.ref, block.parent_ref} end)
+    block_parent_links = Map.new(reducer.blocks, fn block -> {block.ref, block.parent_ref} end)
 
     current_block = Reducer.current_block(reducer)
 
@@ -121,16 +138,18 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
   end
 
   # like params: def foo«(1 = a, 2 = b)»
-  defp extract_from_right(ast_list, reducer) when is_list(ast_list) do
-    Enum.map(ast_list, fn ast -> extract_from_right(ast, reducer) end)
+  defp extract_right_side(ast_list, reducer) when is_list(ast_list) do
+    Enum.map(ast_list, fn ast -> extract_right_side(ast, reducer) end)
   end
 
   # pattern matching: def foo(a, «1 = b») do
-  defp extract_from_right({:=, _meta, [_left, right]}, reducer) do
+  # won't pattern matching like: def foo(a, «b = %Struct{}»))` do
+  defp extract_right_side({:=, _meta, [_left, {variable, _, nil} = right]}, reducer)
+       when is_atom(variable) do
     do_extract(right, reducer)
   end
 
-  defp extract_from_right(_, _) do
+  defp extract_right_side(_, _) do
     []
   end
 
@@ -151,13 +170,25 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
 
   # «%{a: a, b: b}» = %{a: 1, b: 2}
   defp extract_from_left({:%{}, _map_metadata, fields}, reducer) do
-    Enum.map(fields, fn {_key, value} -> extract_from_left(value, reducer) end)
+    Enum.map(fields, fn
+      {_key, value} ->
+        extract_from_left(value, reducer)
+
+      # %{unquote_splicing(list)}
+      _ ->
+        []
+    end)
   end
 
   # «%Foo{a: a, b: b}» = %Foo{a: 1, b: 2}
   defp extract_from_left({:%, _map_metadata, [_struct_module_info, struct_block]}, reducer) do
     # struct_block is the same as «%{a: a, b: b}»
     extract_from_left(struct_block, reducer)
+  end
+
+  # «{:a, b, [c, d]}»
+  defp extract_from_left({:{}, _, blocks_in_tuple}, reducer) do
+    extract_from_left(blocks_in_tuple, reducer)
   end
 
   # «[a, b]» = [1, 2]
@@ -171,6 +202,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     extract_from_left(block, reducer)
   end
 
+  # ignore some ast like: «a = 1», since the top function will handle it
   defp extract_from_left(_, _reducer) do
     []
   end
