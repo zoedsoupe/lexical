@@ -19,9 +19,9 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     {:ok, entries, elem}
   end
 
-  def extract({:def, _, [function_header, _block]} = elem, %Reducer{} = reducer) do
-    {_function_name, _meta, params} = function_header
-    params = List.wrap(params)
+  def extract({operator, _, [function_header, _block]} = elem, %Reducer{} = reducer)
+      when operator in [:def, :defp] do
+    params = pick_function_params(function_header)
 
     subject_with_ranges = [
       extract_from_left(params, reducer) ++ extract_right_side(params, reducer)
@@ -82,6 +82,15 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
            get_application(reducer.document)
          )}
     end
+  end
+
+  defp pick_function_params({:when, _meta, [function_header, _condition]}) do
+    pick_function_params(function_header)
+  end
+
+  defp pick_function_params(function_header) do
+    {_function_name, _meta, params} = function_header
+    List.wrap(params)
   end
 
   defp find_definition(reducer, variable_atom) do

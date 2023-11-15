@@ -154,6 +154,19 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert decorate(doc, b.range) =~ "def foo(a, «b»)"
     end
 
+    test "in a private function's parameter list" do
+      {:ok, [a, b], doc} = ~q[
+        defp foo(a, b) do
+        end
+      ] |> index()
+
+      assert a.subject == :a
+      assert decorate(doc, a.range) =~ "defp foo(«a», b)"
+
+      assert b.subject == :b
+      assert decorate(doc, b.range) =~ "defp foo(a, «b»)"
+    end
+
     test "in parameter list with default value" do
       {:ok, [a, b], doc} = ~q[
         def foo(a, b \\ 2) do
@@ -223,7 +236,28 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert usage.parent == definition.ref
     end
 
-    test "uses after `when`"
+    test "uses after `when`" do
+      {:ok, [definition, usage], doc} = ~q/
+        def foo(a) when a > 0 do
+        end
+        / |> index()
+
+      assert decorate(doc, definition.range) =~ "def foo(«a») when a > 0"
+      assert decorate(doc, usage.range) =~ "when «a» > 0"
+
+      assert usage.parent == definition.ref
+    end
+
+    test "multiple `when`" do
+      {:ok, [definition, usage1, usage2], doc} = ~q/
+        def foo(a) when a > 0 and a < 1 do
+        end
+        / |> index()
+
+      assert decorate(doc, definition.range) =~ "def foo(«a») when a > 0 and a < 1"
+      assert decorate(doc, usage1.range) =~ "when «a» > 0"
+      assert decorate(doc, usage2.range) =~ "and «a» < 1"
+    end
 
     test "uses in case"
 
