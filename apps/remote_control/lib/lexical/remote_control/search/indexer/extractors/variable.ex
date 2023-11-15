@@ -10,16 +10,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
   alias Lexical.RemoteControl.Search.Indexer.Source.Reducer
   require Logger
 
-  def extract(
-        {:=, _assignment_meta, [left, _right]} = elem,
-        %Reducer{} = reducer
-      ) do
-    subject_with_ranges = left |> extract_from_left(reducer) |> List.wrap() |> List.flatten()
-    entries = to_definition_entries(subject_with_ranges, reducer)
-    {:ok, entries, elem}
-  end
-
-  @callable_operators ~w(def defp)a
+  @callable_operators ~w(def defp ->)a
 
   def extract({operator, _, [function_header, _block]} = elem, %Reducer{} = reducer)
       when operator in @callable_operators do
@@ -36,6 +27,15 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
   # `def foo(a, b)` without a block
   def extract({operator, _, [_]} = _elem, _) when operator in @callable_operators do
     :ignored
+  end
+
+  def extract(
+        {:=, _assignment_meta, [left, _right]} = elem,
+        %Reducer{} = reducer
+      ) do
+    subject_with_ranges = left |> extract_from_left(reducer) |> List.wrap() |> List.flatten()
+    entries = to_definition_entries(subject_with_ranges, reducer)
+    {:ok, entries, elem}
   end
 
   def extract({variable_atom, meta, nil}, %Reducer{} = reducer)
@@ -90,8 +90,12 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     pick_function_params(function_header)
   end
 
-  defp pick_function_params(function_header) do
-    {_function_name, _meta, params} = function_header
+  # anonymous function
+  defp pick_function_params(params) when is_list(params) do
+    params
+  end
+
+  defp pick_function_params({_function_name, _meta, params}) do
     List.wrap(params)
   end
 

@@ -8,13 +8,27 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
 
   use ExUnit.Case, async: true
 
-  def index(source) do
+  def index(source, filter \\ []) do
+    only_definition? = Keyword.get(filter, :definition?, false)
+
     path = "/foo/bar/baz.ex"
     doc = Document.new("file:///#{path}", source, 1)
 
     case Indexer.Source.index("/foo/bar/baz.ex", source) do
-      {:ok, indexed_items} -> {:ok, indexed_items, doc}
-      error -> error
+      {:ok, indexed_items} ->
+        items =
+          if only_definition? do
+            Enum.filter(indexed_items, fn item ->
+              item.type == :variable and item.subtype == :definition
+            end)
+          else
+            indexed_items
+          end
+
+        {:ok, items, doc}
+
+      error ->
+        error
     end
   end
 
@@ -259,19 +273,6 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert decorate(doc, usage2.range) =~ "and «a» < 1"
     end
 
-    test "uses in `anonymous` functions" do
-      assert {:ok, [definition, usage], doc} = ~q/
-        fn
-          %{} = a ->
-            [1]
-            a
-
-          a ->
-            {a, 1}
-        end
-      / |> index()
-    end
-
     test "uses in case"
 
     test "uses in cond"
@@ -296,6 +297,149 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
 
       assert decorate(doc, usage_in_root.range) =~ "[«a»]"
       assert usage_in_root.parent == def2_in_root.ref
+    end
+  end
+
+  describe "definition in anonymous function" do
+    test "simple definition in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          a -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "«a» ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching list in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          [a] -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "[«a»] ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching map in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          %{a: a} -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "%{a: «a»} ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching tuple in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          {a, b} -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "{«a», b} ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching list of tuples in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          [{a, b}] -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "[{«a», b}] ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching tuple of lists in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          {[a]} -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "{[«a»]} ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching tuple of tuples in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          {{a, b}} -> a
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "{{«a», b}} ->"
+      assert definition.subtype == :definition
+    end
+
+    test "matching struct in `anonymous` function" do
+      {:ok, [definition], doc} = ~q/
+        fn
+          %Foo{field: value} -> value
+        end
+      / |> index(definition?: true)
+
+      assert decorate(doc, definition.range) =~ "%Foo{field: «value»} ->"
+      assert definition.subtype == :definition
+    end
+  end
+
+  describe "usages in anonymous function" do
+    test "simple usage in `anonymous` function" do
+      {:ok, [definition, usage], doc} = ~q/
+        fn
+          a -> a
+        end
+      / |> index()
+
+      assert decorate(doc, definition.range) =~ "«a» ->"
+      assert decorate(doc, usage.range) =~ "-> «a»"
+    end
+
+    test "complex uses in `anonymous` functions" do
+      assert {:ok,
+              [
+                root_def_a,
+                def_a,
+                use_a,
+                another_a,
+                use_another_a,
+                use_another_a_again,
+                use_root_a
+              ], doc} = ~q/
+        a = 1
+        fn
+          %{} = a ->
+            [1]
+            a
+
+          a ->
+            {a, 1}
+            [a]
+        end
+        %{root: a}
+      / |> index()
+
+      assert decorate(doc, def_a.range) =~ "%{} = «a» ->"
+      assert decorate(doc, use_a.range) =~ "    «a»"
+      assert use_a.parent == def_a.ref
+
+      assert decorate(doc, another_a.range) =~ "  «a» ->"
+      assert decorate(doc, use_another_a.range) =~ "{«a», 1}"
+      assert use_another_a.parent == another_a.ref
+
+      assert decorate(doc, use_another_a_again.range) =~ "[«a»]"
+      assert use_another_a_again.parent == another_a.ref
+
+      assert decorate(doc, root_def_a.range) =~ "«a» = 1"
+      assert decorate(doc, use_root_a.range) =~ "%{root: «a»}"
+      assert use_root_a.parent == root_def_a.ref
     end
   end
 end
