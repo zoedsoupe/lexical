@@ -259,6 +259,19 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.VariableTest do
       assert decorate(doc, usage2.range) =~ "and «a» < 1"
     end
 
+    test "uses in `anonymous` functions" do
+      assert {:ok, [definition, usage], doc} = ~q/
+        fn
+          %{} = a ->
+            [1]
+            a
+
+          a ->
+            {a, 1}
+        end
+      / |> index()
+    end
+
     test "uses in case"
 
     test "uses in cond"

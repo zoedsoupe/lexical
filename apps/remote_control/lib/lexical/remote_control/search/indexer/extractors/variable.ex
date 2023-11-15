@@ -19,8 +19,10 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
     {:ok, entries, elem}
   end
 
+  @callable_operators ~w(def defp)a
+
   def extract({operator, _, [function_header, _block]} = elem, %Reducer{} = reducer)
-      when operator in [:def, :defp] do
+      when operator in @callable_operators do
     params = pick_function_params(function_header)
 
     subject_with_ranges = [
@@ -32,7 +34,7 @@ defmodule Lexical.RemoteControl.Search.Indexer.Extractors.Variable do
   end
 
   # `def foo(a, b)` without a block
-  def extract({:def, _, [_]} = _elem, _) do
+  def extract({operator, _, [_]} = _elem, _) when operator in @callable_operators do
     :ignored
   end
 
